@@ -32,7 +32,7 @@ class Cylinder:
             # If a ValueError is raised, publish an error message to the RESPONSE_TOPIC
             error_message = f"Error: {e}"
             self.mqtt_subscriber.client.publish(
-                RESPONSE_TOPIC, f"Error: {e}", qos=1
+                RESPONSE_TOPIC, error_message.encode(), qos=1
             )  # Publish the error message
             print("error_message: ", error_message)
 

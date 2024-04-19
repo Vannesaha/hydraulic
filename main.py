@@ -1,7 +1,10 @@
+# main.py
+
 # Import the MQTTSubscriber class from src.mqtt_client module
 from src.mqtt_subscriber import MQTTSubscriber
-from src.hydraulics.cylinders import Cylinder
-from src.hydraulics.control import HydraulicDevice
+
+# from src.hydraulics.cylinders import Cylinder
+# from src.hydraulics.control import HydraulicDevice
 
 
 # Define the main function
@@ -12,7 +15,7 @@ def main():
     subscriber.run()
 
     # Create a list of cylinders
-    subscriber.hydraulic_device = HydraulicDevice(subscriber)
+    # subscriber.hydraulic_device = HydraulicDevice(subscriber)
 
 
 # Check if the script is being run directly
