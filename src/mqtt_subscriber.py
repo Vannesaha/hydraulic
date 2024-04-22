@@ -1,94 +1,105 @@
-# Importing the mqtt client from the paho.mqtt package
-import paho.mqtt.client as mqtt
+# mqtt_subscriber.py
 
-# Importing the HydraulicDevice class from the control module in the hydraulics package
-from src.hydraulics.control import HydraulicDevice
+# This code creates an MQTT subscriber that connects to an MQTT broker,
+# subscribes to a topic, and handles messages on that topic.
+# The messages are expected to contain commands to set the position of a hydraulic cylinder.
+# The subscriber maintains a dictionary of Cylinder objects and uses the
+# commands in the messages to operate the cylinders.
 
-# Importing constants from the settings module in the config package
+# Import necessary modules
+from umqtt.simple import MQTTClient
+from src.hydraulics.cylinders import Cylinder
 from config.settings import (
-    BROKER,  # MQTT broker address
-    PORT,  # MQTT broker port
-    STATUS_TOPIC,  # MQTT topic for status messages
-    DIRECT_TOPIC,  # MQTT topic for direct messages
-    LWT_MESSAGE,  # Last Will and Testament message
-    OFFLINE_MESSAGE,  # Offline message
-    DEVICE_ID,  # Unique device identifier
-    ONLINE_MESSAGE,  # Online message
+    BROKER,
+    PORT,
+    STATUS_TOPIC,
+    DIRECT_TOPIC,
+    LWT_MESSAGE,
+    OFFLINE_MESSAGE,
+    DEVICE_ID,
+    ONLINE_MESSAGE,
 )
 
 
-# Defining a class named MQTTSubscriber
+# Define the MQTTSubscriber class
 class MQTTSubscriber:
-    # The constructor method for the MQTTSubscriber class
     def __init__(self):
-        # Initializing the client attribute as an MQTT client with the DEVICE_ID as the client_id
-        self.client = mqtt.Client(client_id=DEVICE_ID)
-        # Setting the Last Will and Testament message for the client
-        self.client.will_set(STATUS_TOPIC, payload=LWT_MESSAGE, qos=1, retain=True)
-        # Setting the on_connect, on_message, and on_disconnect methods as the corresponding callback methods for the client
-        self.client.on_connect = self.on_connect
-        self.client.on_message = self.on_message
-        self.client.on_disconnect = self.on_disconnect
-        # Initializing the messages attribute as an empty dictionary
-        self.messages = {}  # Initialize the messages dictionary
-        # Initializing the hydraulic_device attribute as a HydraulicDevice object
-        self.hydraulic_device = HydraulicDevice(mqtt_subscriber=self)
+        # Initialize MQTT client with device ID, broker, and port
+        self.client = MQTTClient(DEVICE_ID, BROKER, PORT)
+        # Set the last will message
+        self.client.set_last_will(STATUS_TOPIC, LWT_MESSAGE, retain=True)
+        # Initialize messages dictionary
+        self.messages = {}
+        # Initialize cylinders dictionary with Cylinder objects
+        self.cylinders = {
+            i: Cylinder(self, i, None) for i in range(4)
+        }  # Create a dictionary of Cylinder objects for cylinders 0 to 3
 
-    # Method to be called when the client connects to the broker
-    def on_connect(self, client, userdata, flags, rc):
-        # Subscribing the client to the DIRECT_TOPIC
-        client.subscribe(DIRECT_TOPIC)
-        if rc == 0:
-            # If the connection was successful, print a success message and publish an online message to the STATUS_TOPIC
-            print("Connected successfully.")
-            client.publish(STATUS_TOPIC, f"{ONLINE_MESSAGE}", qos=1, retain=True)
-
-            # Subscribe to topics for each cylinder
-            for i in range(0, 3 + 1):
-                client.subscribe(f"{DIRECT_TOPIC}/{i}", 0)
-        else:
-            # If the connection was not successful, print the result code
-            print(f"Connected with result code {rc}")
-
-    # Method to be called when a message is received by the client
-    def on_message(self, client, userdata, msg):
-        # Decoding the payload of the message
-        payload = msg.payload.decode()
-        # Updating the messages dictionary with the new message
-        self.messages[msg.topic] = (
-            payload  # Update the messages dictionary with the new message
-        )
-        # If the topic of the message starts with DIRECT_TOPIC and the payload contains a colon
-        if msg.topic.startswith(DIRECT_TOPIC) and ":" in payload:
-            # Split the payload into action and command
-            action, command = payload.split(":")
-            # If the action is 'set_hydraulic'
-            if action == "set_hydraulic":
-                # Get the cylinder number from the topic of the message
-                cylinder = int(msg.topic.split("/")[-1])
-                # Convert the command to an integer
-                position = int(command)
-                # Set the position of the specified cylinder
-                self.hydraulic_device.cylinders[cylinder].set_hydraulic(position)
-                # Print the topic and payload of the message
-                print(f"Received on {msg.topic}: {msg.payload.decode()}")
-
-    # Method to be called when the client disconnects from the broker
-    def on_disconnect(self, client, userdata, rc):
-        # If the disconnection was not clean, print a message
-        if rc != 0:
-            print("Unexpected disconnection.")
-
-    # Method to run the MQTTSubscriber
-    def run(self):
+    def on_connect(self):
         try:
-            # Connect the client to the broker and start the network loop
-            self.client.connect(BROKER, PORT, 60)
-            self.client.loop_start()
-            # Wait for the user to press Enter to disconnect
-            input("Press Enter to disconnect...\n")
-        finally:
-            # Publish an offline message to the STATUS_TOPIC, disconnect the client from the broker, and stop the network loop
-            self.client.publish(STATUS_TOPIC, OFFLINE_MESSAGE, qos=1, retain=True)
+            # Connect to the MQTT broker
+            self.client.connect()
+            print(f"Connected successfully to broker: {BROKER}.")
+            # Set the callback function to handle messages
+            self.client.set_callback(self.on_message)
+            # Publish the online message
+            self.client.publish(STATUS_TOPIC, ONLINE_MESSAGE, retain=True)
+            # Subscribe to the set_cylinder_position topic
+            self.client.subscribe(
+                f"{DIRECT_TOPIC}/set_cylinder_position"
+            )  # Subscribe to the correct topic
+        except OSError:
+            print("Connection failed.")
+
+    def on_message(self, topic, msg):
+        # Decode the topic and payload
+        topic = topic.decode()  # Decode the topic to a string
+        payload = msg.decode()
+        # Store the message in the messages dictionary
+        self.messages[topic] = payload
+        # If the topic is set_cylinder_position, handle the message
+        if (
+            topic == f"{DIRECT_TOPIC}/set_cylinder_position"
+        ):  # Check for the correct topic
+            actions = payload.split(",")  # Split the payload into actions
+            for action in actions:  # Loop through the actions
+                command, value = action.split(
+                    ":"
+                )  # Split the action into command and value
+                if command == "set_cylinder":
+                    cylinder = int(value)  # Convert the value to an integer
+                    print(f"Received on {topic}: set cylinder to {cylinder}")
+                elif command == "set_position":
+                    position = int(value)  # Convert the value to an integer
+                    print(f"Received on {topic}: set position to {position}")
+                    # Set the position of the specified cylinder
+                    self.cylinders[cylinder].set_hydraulic(
+                        position
+                    )  # Set the position of the cylinder
+
+                    # example of coming messagesto topic: device/hydraulic/set_cylinder_position:
+                    # set_cylinder:2,set_position:180
+
+                    # example how they will be printed:
+                    # Received on device/hydraulic/set_cylinder_position: set cylinder to 2
+                    # Received on device/hydraulic/set_cylinder_position: set position to 180
+
+    def on_disconnect(self):
+        try:
+            # Publish the offline message
+            self.client.publish(STATUS_TOPIC, OFFLINE_MESSAGE, retain=True)
+            # Disconnect from the MQTT broker
             self.client.disconnect()
-            self.client.loop_stop()
+            print("Disconnected successfully.")
+        except OSError:
+            print("Disconnection failed.")
+
+    def run(self):
+        # print("Running MQTTSubscriber")  # Add this line
+        # Connect to the MQTT broker and start handling messages
+        self.on_connect()
+        self.client.set_callback(self.on_message)
+        while True:
+            self.client.wait_msg()
+        # Disconnect from the MQTT broker when done
+        self.on_disconnect()

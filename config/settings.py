@@ -1,5 +1,6 @@
 # Configuration settings for MQTT Broker
-BROKER = "localhost"  # broker address
+BROKER = "192.168.1.100"  # broker address
+# BROKER = "localhost"  # broker address
 PORT = 1883
 DEVICE_ID = "hydraulic"
 
